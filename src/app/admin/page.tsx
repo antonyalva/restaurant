@@ -66,6 +66,9 @@ interface RecentOrder {
 export default function AdminDashboard() {
     const router = useRouter()
     const [loading, setLoading] = useState(true)
+    const [totalSales, setTotalSales] = useState(0)
+    const [todaySales, setTodaySales] = useState(0)
+    const [totalTransactions, setTotalTransactions] = useState(0)
     const [dailySales, setDailySales] = useState<DailySales[]>([])
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethodData[]>([])
     const [topProducts, setTopProducts] = useState<TopProduct[]>([])
@@ -100,6 +103,27 @@ export default function AdminDashboard() {
     const loadDashboardData = async () => {
         setLoading(true)
         try {
+            // Fetch ALL orders for total stats
+            const { data: allOrders } = await supabase
+                .from('orders')
+                .select('total')
+
+            const totalSalesAmount = allOrders?.reduce((sum, order) => sum + parseFloat(order.total), 0) || 0
+            const totalTransactionsCount = allOrders?.length || 0
+            setTotalSales(totalSalesAmount)
+            setTotalTransactions(totalTransactionsCount)
+
+            // Fetch today's orders
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const { data: todayOrders } = await supabase
+                .from('orders')
+                .select('total')
+                .gte('created_at', today.toISOString())
+
+            const todaySalesAmount = todayOrders?.reduce((sum, order) => sum + parseFloat(order.total), 0) || 0
+            setTodaySales(todaySalesAmount)
+
             // Fetch orders from last 7 days
             const sevenDaysAgo = new Date()
             sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
@@ -266,6 +290,48 @@ export default function AdminDashboard() {
 
     return (
         <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card>
+                    <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-medium text-gray-600">Total de ventas</CardTitle>
+                            <DollarSign className="w-4 h-4 text-gray-400" />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-3xl font-bold">S/. {totalSales.toFixed(2)}</div>
+                        <p className="text-xs text-gray-500 mt-1">Ventas totales</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-medium text-gray-600">Ventas de hoy</CardTitle>
+                            <TrendingUp className="w-4 h-4 text-gray-400" />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-3xl font-bold">S/. {todaySales.toFixed(2)}</div>
+                        <p className="text-xs text-gray-500 mt-1">Ventas para hoy</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-medium text-gray-600">Total de ventas</CardTitle>
+                            <BarChart3 className="w-4 h-4 text-gray-400" />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-3xl font-bold">{totalTransactions}</div>
+                        <p className="text-xs text-gray-500 mt-1">Transacciones completadas</p>
+                    </CardContent>
+                </Card>
+            </div>
+
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Sales Last 7 Days */}
