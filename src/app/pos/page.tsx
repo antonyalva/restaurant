@@ -12,7 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Coffee, Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Wallet, LogOut, Wifi, WifiOff, Lock, Store, Lightbulb, FileText, Banknote, QrCode, TriangleAlert, CheckCircle2 } from 'lucide-react'
+import { Coffee, Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Wallet, LogOut, Wifi, WifiOff, Lock, Store, Lightbulb, FileText, Banknote, QrCode, TriangleAlert, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useSyncStore } from '@/store/useSyncStore'
 
@@ -59,6 +59,7 @@ export default function POSPage() {
     const [isShiftOpen, setIsShiftOpen] = useState<boolean | null>(null) // null = loading
     const [currentShift, setCurrentShift] = useState<any>(null)
     const [currentUser, setCurrentUser] = useState<any>(null)
+    const [userProfile, setUserProfile] = useState<any>(null)
 
     // Open Shift Modal
     const [showOpenShiftModal, setShowOpenShiftModal] = useState(false)
@@ -92,6 +93,14 @@ export default function POSPage() {
             return
         }
         setCurrentUser(data.session.user)
+
+        // Fetch user profile to check role
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.session.user.id)
+            .single()
+        setUserProfile(profile)
 
         try {
             const { data: shift } = await supabase
@@ -365,6 +374,13 @@ export default function POSPage() {
                             >
                                 <Lock className="w-4 h-4 mr-2" />
                                 Cerrar Caja
+                            </Button>
+                        )}
+
+                        {userProfile?.role === 'admin' && (
+                            <Button variant="outline" size="sm" onClick={() => router.push('/admin')}>
+                                <ArrowLeft className="w-4 h-4 mr-2" />
+                                Volver
                             </Button>
                         )}
 
