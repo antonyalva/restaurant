@@ -1,36 +1,119 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Coffee Shop POS - Sistema de Punto de Venta
 
-## Getting Started
+Sistema de punto de venta completo y funcional para cafeterías, desarrollado con Next.js 15, Supabase, y soporte offline mediante PWA.
 
-First, run the development server:
+## 🚀 Características Principales
 
-```bash
+✅ **Autenticación con roles** (Admin / Cajero)  
+✅ **Catálogo de productos** con categorías y búsqueda  
+✅ **Carrito de compra** con gestión de cantidades  
+✅ **Sistema de pago** (Efectivo / Tarjeta)  
+✅ **Dashboard de administrador** con estadísticas de ventas  
+✅ **Gestión de inventario** con descuento automático de stock  
+✅ **Modo offline** (PWA) con sincronización automática  
+✅ **Responsive y táctil**  
+
+## 📦 Stack Tecnológico
+
+- **Frontend**: Next.js 15 (App Router) + React 19 + TypeScript
+- **Estilos**: Tailwind CSS + shadcn/ui
+- **Backend**: Supabase (PostgreSQL + Auth + Realtime + RLS)
+- **Estado**: Zustand (carrito, sincronización offline)
+- **PWA**: next-pwa + Service Workers
+- **Iconos**: Lucide React
+
+## 🛠️ Instalación en 5 Minutos
+
+### 1. Clonar e instalar dependencias
+
+\`\`\`bash
+cd coffee-shop-pos
+npm install
+\`\`\`
+
+### 2. Configurar Supabase
+
+1. Crea un proyecto en [supabase.com](https://supabase.com)
+2. Ve a **SQL Editor** y ejecuta el archivo:
+   \`supabase/migrations/0001_initial_schema.sql\`
+3. Crea dos usuarios de prueba desde **Authentication > Users**:
+   - \`admin@pos.com\` / \`admin123\` (rol: admin)
+   - \`cajero@pos.com\` / \`cajero123\` (rol: cashier)
+4. En la tabla \`profiles\`, asigna \`role = 'admin'\` al primer usuario
+
+### 3. Variables de entorno
+
+Copia \`.env.example\` a \`.env.local\`:
+
+\`\`\`bash
+cp .env.example .env.local
+\`\`\`
+
+Edita \`.env.local\` con tus credenciales de Supabase:
+
+\`\`\`env
+NEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=tu-anon-key
+NEXT_PUBLIC_TAX_RATE=0.10
+\`\`\`
+
+### 4. Iniciar en desarrollo
+
+\`\`\`bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+\`\`\`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📱 Uso
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Inicio de Sesión
+- **Admin**: \`admin@pos.com\` / \`admin123\` → Redirige a \`/admin\`
+- **Cajero**: \`cajero@pos.com\` / \`cajero123\` → Redirige a \`/pos\`
 
-## Learn More
+### Pantalla POS (Cajero)
+1. Busca o selecciona productos por categoría
+2. Haz clic en un producto para agregarlo al carrito
+3. Ajusta cantidades con +/-
+4. Presiona **"Cobrar"**
+5. Selecciona método de pago (Efectivo/Tarjeta)
+6. Confirma el pago
 
-To learn more about Next.js, take a look at the following resources:
+### Dashboard Admin
+- Ver ventas del día
+- Productos más vendidos
+- Stock actual de ingredientes
+- Órdenes recientes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🔐 Estructura de Base de Datos
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+El sistema incluye las siguientes tablas principales:
 
-## Deploy on Vercel
+- **profiles**: Usuarios del sistema (admin/cajero)
+- **categories**: Categorías de productos
+- **products**: Catálogo de productos
+- **variants**: Tamaños (Pequeño/Mediano/Grande)
+- **modifiers**: Add-ons (Leche vegetal, extra shot, etc.)
+- **ingredients**: Inventario de materias primas
+- **product_ingredients**: Recetas (descuento automático de stock)
+- **orders**: Órdenes de venta
+- **order_items**: Líneas de orden
+- **loyalty_cards**: Programa de fidelidad (por teléfono)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🌐 Deploy en Vercel
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Sube el código a GitHub
+2. Ve a [vercel.com](https://vercel.com) e importa tu repositorio
+3. Agrega las variables de entorno:
+   - \`NEXT_PUBLIC_SUPABASE_URL\`
+   - \`NEXT_PUBLIC_SUPABASE_ANON_KEY\`
+   - \`NEXT_PUBLIC_TAX_RATE\`
+4. Deploy
+
+## 📄 Licencia
+
+MIT
+
+## 🤝 Contribuciones
+
+Pull requests son bienvenidas. Para cambios mayores, abre un issue primero.
