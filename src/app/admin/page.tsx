@@ -3,82 +3,76 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Separator } from '@/components/ui/separator'
+import { Input } from '@/components/ui/input'
+import { LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import {
-    TrendingUp,
-    DollarSign,
     Package,
-    AlertTriangle,
-    Coffee,
-    LogOut,
-    Calendar,
+    FileText,
+    Layers,
+    Grid,
+    Truck,
+    DollarSign,
+    Gift,
     Users,
-    Eye
+    Settings,
+    TrendingUp,
+    BarChart3,
+    PieChart as PieChartIcon
 } from 'lucide-react'
 
-interface DashboardStats {
-    todayRevenue: number
-    todayOrders: number
-    lowStockItems: number
-    topProducts: Array<{
-        name: string
-        quantity: number
-        revenue: number
-    }>
-    recentOrders: Array<{
-        id: string
-        order_number: string
-        total: number
-        subtotal: number
-        tax: number
-        created_at: string
-        payment_method: string
-        amount_paid: number | null
-        change_amount: number
-    }>
+// Color palette
+const COLORS = {
+    efectivo: '#10b981',
+    card: '#8b5cf6',
+    qr: '#3b82f6',
+    products: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444']
 }
 
-interface OrderDetail {
+interface DailySales {
+    date: string
+    sales: number
+}
+
+interface PaymentMethodData {
+    name: string
+    value: number
+    orders: number
+    percentage: number
+}
+
+interface TopProduct {
+    name: string
+    quantity: number
+    revenue: number
+}
+
+interface TopCategory {
+    name: string
+    quantity: number
+    revenue: number
+}
+
+interface RecentOrder {
     id: string
     order_number: string
-    total: number
-    subtotal: number
-    tax: number
-    payment_method: string
-    amount_paid: number | null
-    change_amount: number
     created_at: string
-    order_items: Array<{
-        id: string
-        quantity: number
-        unit_price: number
-        subtotal: number
-        product: {
-            name: string
-        }
-        variant?: {
-            name: string
-        }
-    }>
+    cashier_email: string
+    payment_method: string
+    total: number
 }
 
-export default function AdminPage() {
+export default function AdminDashboard() {
     const router = useRouter()
-    const [stats, setStats] = useState<DashboardStats>({
-        todayRevenue: 0,
-        todayOrders: 0,
-        lowStockItems: 0,
-        topProducts: [],
-        recentOrders: []
-    })
     const [loading, setLoading] = useState(true)
-    const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null)
-    const [showOrderDetail, setShowOrderDetail] = useState(false)
+    const [dailySales, setDailySales] = useState<DailySales[]>([])
+    const [paymentMethods, setPaymentMethods] = useState<PaymentMethodData[]>([])
+    const [topProducts, setTopProducts] = useState<TopProduct[]>([])
+    const [topCategories, setTopCategories] = useState<TopCategory[]>([])
+    const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
+    const [searchTerm, setSearchTerm] = useState('')
+    const [paymentFilter, setPaymentFilter] = useState('all')
 
     useEffect(() => {
         checkAuth()
@@ -106,350 +100,442 @@ export default function AdminPage() {
     const loadDashboardData = async () => {
         setLoading(true)
         try {
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
+            // Fetch orders from last 7 days
+            const sevenDaysAgo = new Date()
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-            // Today's orders
             const { data: orders } = await supabase
                 .from('orders')
-                .select('*, order_items(*, product:products(name))')
-                .gte('created_at', today.toISOString())
+                .select(`
+                    *,
+                    order_items (
+                        *,
+                        product:products (name, category_id)
+                    ),
+                    cashier:profiles (email)
+                `)
+                .gte('created_at', sevenDaysAgo.toISOString())
                 .order('created_at', { ascending: false })
 
-            const todayRevenue = orders?.reduce((sum, order) => sum + Number(order.total), 0) || 0
-            const todayOrders = orders?.length || 0
+            if (orders) {
+                // Process daily sales
+                const salesByDay: { [key: string]: number } = {}
+                const last7Days = []
+                for (let i = 6; i >= 0; i--) {
+                    const date = new Date()
+                    date.setDate(date.getDate() - i)
+                    const dateStr = date.toLocaleDateString('es-PE', { day: 'numeric', month: 'short' })
+                    salesByDay[dateStr] = 0
+                    last7Days.push(dateStr)
+                }
 
-            // Low stock items
-            const { data: lowStock } = await supabase
-                .from('ingredients')
-                .select('*')
-                .lt('current_stock', supabase.rpc('current_stock', { ingredient_id: 'id' }))
-
-            // Top products (aggregation would be better with views/functions)
-            const productSales: any = {}
-            orders?.forEach(order => {
-                order.order_items?.forEach((item: any) => {
-                    const name = item.product?.name || 'Unknown'
-                    if (!productSales[name]) {
-                        productSales[name] = { quantity: 0, revenue: 0 }
+                orders.forEach(order => {
+                    const orderDate = new Date(order.created_at)
+                    const dateStr = orderDate.toLocaleDateString('es-PE', { day: 'numeric', month: 'short' })
+                    if (salesByDay[dateStr] !== undefined) {
+                        salesByDay[dateStr] += parseFloat(order.total)
                     }
-                    productSales[name].quantity += item.quantity
-                    productSales[name].revenue += Number(item.subtotal)
                 })
-            })
 
-            const topProducts = Object.entries(productSales)
-                .map(([name, data]: any) => ({ name, ...data }))
-                .sort((a, b) => b.revenue - a.revenue)
-                .slice(0, 5)
+                const dailySalesData = last7Days.map(date => ({
+                    date,
+                    sales: salesByDay[date]
+                }))
+                setDailySales(dailySalesData)
 
-            setStats({
-                todayRevenue,
-                todayOrders,
-                lowStockItems: lowStock?.length || 0,
-                topProducts,
-                recentOrders: orders?.slice(0, 10).map(o => ({
-                    id: o.id,
-                    order_number: o.order_number,
-                    total: o.total,
-                    subtotal: o.subtotal,
-                    tax: o.tax,
-                    created_at: o.created_at,
-                    payment_method: o.payment_method,
-                    amount_paid: o.amount_paid,
-                    change_amount: o.change_amount
-                })) || []
-            })
+                // Process payment methods
+                const paymentData: { [key: string]: { amount: number, count: number } } = {
+                    'Efectivo': { amount: 0, count: 0 },
+                    'Tarjeta': { amount: 0, count: 0 },
+                    'Yape': { amount: 0, count: 0 }
+                }
+
+                orders.forEach(order => {
+                    const method = order.payment_method === 'cash' ? 'Efectivo' :
+                        order.payment_method === 'card' ? 'Tarjeta' : 'Yape'
+                    paymentData[method].amount += parseFloat(order.total)
+                    paymentData[method].count += 1
+                })
+
+                const totalAmount = Object.values(paymentData).reduce((sum, data) => sum + data.amount, 0)
+                const paymentMethodsData = Object.entries(paymentData).map(([name, data]) => ({
+                    name,
+                    value: data.amount,
+                    orders: data.count,
+                    percentage: totalAmount > 0 ? (data.amount / totalAmount) * 100 : 0
+                }))
+                setPaymentMethods(paymentMethodsData)
+
+                // Process top products
+                const productSales: { [key: string]: { quantity: number, revenue: number } } = {}
+                orders.forEach(order => {
+                    order.order_items?.forEach((item: any) => {
+                        const name = item.product?.name || 'Unknown'
+                        if (!productSales[name]) {
+                            productSales[name] = { quantity: 0, revenue: 0 }
+                        }
+                        productSales[name].quantity += item.quantity
+                        productSales[name].revenue += parseFloat(item.subtotal)
+                    })
+                })
+
+                const topProductsData = Object.entries(productSales)
+                    .map(([name, data]) => ({ name, ...data }))
+                    .sort((a, b) => b.revenue - a.revenue)
+                    .slice(0, 5)
+                setTopProducts(topProductsData)
+
+                // Process top categories
+                const categorySales: { [key: string]: { quantity: number, revenue: number } } = {}
+                orders.forEach(order => {
+                    order.order_items?.forEach((item: any) => {
+                        const categoryId = item.product?.category_id
+                        if (categoryId) {
+                            if (!categorySales[categoryId]) {
+                                categorySales[categoryId] = { quantity: 0, revenue: 0 }
+                            }
+                            categorySales[categoryId].quantity += item.quantity
+                            categorySales[categoryId].revenue += parseFloat(item.subtotal)
+                        }
+                    })
+                })
+
+                // Fetch category names
+                const { data: categories } = await supabase
+                    .from('categories')
+                    .select('id, name')
+
+                const categoryMap = new Map(categories?.map(c => [c.id, c.name]) || [])
+                const topCategoriesData = Object.entries(categorySales)
+                    .map(([id, data]) => ({
+                        name: categoryMap.get(id) || 'Unknown',
+                        ...data
+                    }))
+                    .sort((a, b) => b.revenue - a.revenue)
+                    .slice(0, 5)
+                setTopCategories(topCategoriesData)
+
+                // Recent orders
+                const recentOrdersData = orders.slice(0, 7).map(order => ({
+                    id: order.id,
+                    order_number: order.order_number,
+                    created_at: order.created_at,
+                    cashier_email: order.cashier?.email || 'Unknown',
+                    payment_method: order.payment_method,
+                    total: parseFloat(order.total)
+                }))
+                setRecentOrders(recentOrdersData)
+            }
         } catch (error) {
-            console.error('Error loading dashboard:', error)
+            console.error('Error loading dashboard data:', error)
         } finally {
             setLoading(false)
         }
     }
 
-    const handleViewOrder = async (orderId: string) => {
-        try {
-            const { data: order } = await supabase
-                .from('orders')
-                .select(`
-                    *,
-                    order_items(
-                        *,
-                        product:products(name),
-                        variant:variants(name)
-                    )
-                `)
-                .eq('id', orderId)
-                .single()
+    const quickAccessCards = [
+        { title: 'Gestión de Inventario', description: 'Gestionar niveles de stock', icon: Package, href: '/admin/inventory/ingredients' },
+        { title: 'Historial de Ventas', description: 'Consultar ventas por período', icon: FileText, href: '/admin/sales' },
+        { title: 'Catálogo de Productos', description: 'Gestionar productos', icon: Layers, href: '/admin/inventory/products' },
+        { title: 'Categorías', description: 'Gestionar categorías de productos', icon: Grid, href: '/admin/inventory/categories' },
+        { title: 'Proveedores', description: 'Gestionar proveedores', icon: Truck, href: '/admin/inventory/suppliers' },
+        { title: 'Turnos / Cierre de Caja', description: 'Ver historial de turnos y cierres', icon: DollarSign, href: '/admin/shifts' },
+        { title: 'Programa de Fidelidad', description: 'Gestionar clientes y recompensas', icon: Gift, href: '/admin/loyalty/dashboard' },
+        { title: 'Usuarios y Roles', description: 'Gestionar cajeros y permisos', icon: Users, href: '/admin/people/users' },
+        { title: 'Configuración', description: 'Datos del negocio y tickets', icon: Settings, href: '/admin' },
+        { title: 'Fidelidad', description: 'Reglas y recompensas', icon: Gift, href: '/admin/loyalty/rules' },
+    ]
 
-            if (order) {
-                setSelectedOrder(order as OrderDetail)
-                setShowOrderDetail(true)
-            }
-        } catch (error) {
-            console.error('Error loading order details:', error)
-        }
+    const filteredOrders = recentOrders.filter(order => {
+        const matchesSearch = order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            order.cashier_email.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchesPayment = paymentFilter === 'all' || order.payment_method === paymentFilter
+        return matchesSearch && matchesPayment
+    })
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+                    <p className="mt-4 text-gray-600">Cargando dashboard...</p>
+                </div>
+            </div>
+        )
     }
 
     return (
-        <div className="p-8">
-            <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Bienvenido al panel de control</p>
+        <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Sales Last 7 Days */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                            <TrendingUp className="w-5 h-5 text-green-600" />
+                            Ventas Últimos 7 Días
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <LineChart data={dailySales}>
+                                <XAxis dataKey="date" stroke="#9ca3af" style={{ fontSize: '12px' }} />
+                                <YAxis stroke="#9ca3af" style={{ fontSize: '12px' }} />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                                    formatter={(value: number) => [`S/ ${value.toFixed(2)}`, 'Ventas']}
+                                />
+                                <Line type="monotone" dataKey="sales" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 5 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </CardContent>
+                </Card>
+
+                {/* Payment Methods */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                            <BarChart3 className="w-5 h-5 text-blue-600" />
+                            Métodos de Pago
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-center">
+                            <ResponsiveContainer width="100%" height={250}>
+                                <PieChart>
+                                    <Pie
+                                        data={paymentMethods}
+                                        cx="50%"
+                                        cy="50%"
+                                        labelLine={false}
+                                        label={(entry) => `${entry.name} ${entry.percentage.toFixed(0)}%`}
+                                        outerRadius={80}
+                                        fill="#8884d8"
+                                        dataKey="value"
+                                    >
+                                        {paymentMethods.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={
+                                                entry.name === 'Efectivo' ? COLORS.efectivo :
+                                                    entry.name === 'Tarjeta' ? COLORS.card :
+                                                        COLORS.qr
+                                            } />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip formatter={(value: number) => `S/ ${value.toFixed(2)}`} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                            {paymentMethods.map((method, index) => (
+                                <div key={index} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-3 h-3 rounded-full`} style={{
+                                            backgroundColor: method.name === 'Efectivo' ? COLORS.efectivo :
+                                                method.name === 'Tarjeta' ? COLORS.card :
+                                                    COLORS.qr
+                                        }}></div>
+                                        <span>{method.name}</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-semibold">S/ {method.value.toFixed(2)}</div>
+                                        <div className="text-xs text-gray-500">{method.orders} órdenes</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Ventas del Día</CardTitle>
-                        <DollarSign className="h-4 w-4 text-green-600" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-green-600">
-                            ${stats.todayRevenue.toFixed(2)}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                            {stats.todayOrders} órdenes
-                        </p>
-                    </CardContent>
-                </Card>
 
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Órdenes Hoy</CardTitle>
-                        <Calendar className="h-4 w-4 text-blue-600" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">
-                            {stats.todayOrders}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                            Transacciones completadas
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Productos Bajos</CardTitle>
-                        <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-yellow-600">
-                            {stats.lowStockItems}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                            Ingredientes bajo stock
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Top Producto</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-purple-600" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-lg font-bold text-purple-600 truncate">
-                            {stats.topProducts[0]?.name || 'N/A'}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                            {stats.topProducts[0]?.quantity || 0} vendidos
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
+            {/* Product Analytics */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Top Products */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>Productos Más Vendidos</CardTitle>
-                        <CardDescription>Ranking de hoy por ingresos</CardDescription>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                            <PieChartIcon className="w-5 h-5 text-purple-600" />
+                            Top 5 Productos Más Vendidos
+                        </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-3">
-                            {stats.topProducts.length === 0 ? (
-                                <p className="text-center text-gray-400 py-8">No hay ventas hoy</p>
-                            ) : (
-                                stats.topProducts.map((product, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center">
-                                                <span className="text-sm font-bold text-amber-700 dark:text-amber-300">
-                                                    {index + 1}
-                                                </span>
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-gray-900 dark:text-white">{product.name}</p>
-                                                <p className="text-xs text-gray-500">{product.quantity} unidades</p>
-                                            </div>
-                                        </div>
-                                        <p className="font-bold text-green-600">
-                                            ${product.revenue.toFixed(2)}
-                                        </p>
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie
+                                    data={topProducts}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    paddingAngle={5}
+                                    dataKey="revenue"
+                                >
+                                    {topProducts.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS.products[index % COLORS.products.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip formatter={(value: number) => `S/ ${value.toFixed(2)}`} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="mt-4 space-y-2">
+                            {topProducts.map((product, index) => (
+                                <div key={index} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS.products[index % COLORS.products.length] }}></div>
+                                        <span className="truncate max-w-[200px]">{product.name}</span>
                                     </div>
-                                ))
-                            )}
+                                    <div className="text-right">
+                                        <div className="font-semibold">S/ {product.revenue.toFixed(2)}</div>
+                                        <div className="text-xs text-gray-500">{product.quantity} un.</div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Recent Orders */}
+                {/* Top Categories */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>Órdenes Recientes</CardTitle>
-                        <CardDescription>Últimas 10 transacciones</CardDescription>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                            <PieChartIcon className="w-5 h-5 text-orange-600" />
+                            Categorías Más Vendidas
+                        </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <ScrollArea className="h-[300px]">
-                            <div className="space-y-2">
-                                {stats.recentOrders.length === 0 ? (
-                                    <p className="text-center text-gray-400 py-8">No hay órdenes</p>
-                                ) : (
-                                    stats.recentOrders.map((order, index) => (
-                                        <div
-                                            key={index}
-                                            className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                            onClick={() => handleViewOrder(order.id)}
-                                        >
-                                            <div className="flex-1">
-                                                <p className="font-medium text-gray-900 dark:text-white">
-                                                    {order.order_number}
-                                                </p>
-                                                <p className="text-xs text-gray-500">
-                                                    {new Date(order.created_at).toLocaleTimeString('es-ES', {
-                                                        hour: '2-digit',
-                                                        minute: '2-digit'
-                                                    })}
-                                                </p>
-                                            </div>
-                                            <div className="text-right flex items-center gap-3">
-                                                <div>
-                                                    <p className="font-bold text-green-600">${order.total.toFixed(2)}</p>
-                                                    <Badge variant="outline" className="text-xs">
-                                                        {order.payment_method === 'cash' ? 'Efectivo' : 'Tarjeta'}
-                                                    </Badge>
-                                                </div>
-                                                <Eye className="w-4 h-4 text-gray-400" />
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </ScrollArea>
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie
+                                    data={topCategories}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    paddingAngle={5}
+                                    dataKey="revenue"
+                                >
+                                    {topCategories.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS.products[index % COLORS.products.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip formatter={(value: number) => `S/ ${value.toFixed(2)}`} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="mt-4 space-y-2">
+                            {topCategories.map((category, index) => (
+                                <div key={index} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS.products[index % COLORS.products.length] }}></div>
+                                        <span>{category.name}</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-semibold">S/ {category.revenue.toFixed(2)}</div>
+                                        <div className="text-xs text-gray-500">{category.quantity} un.</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* Order Detail Modal - Touch Optimized */}
-            <Dialog open={showOrderDetail} onOpenChange={setShowOrderDetail}>
-                <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
-                    <DialogHeader className="p-6 pb-2 border-b">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <DialogTitle className="text-xl">Detalle de Orden</DialogTitle>
-                                <DialogDescription className="text-base mt-1">
-                                    #{selectedOrder?.order_number}
-                                </DialogDescription>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-sm text-gray-500">
-                                    {selectedOrder && new Date(selectedOrder.created_at).toLocaleDateString('es-ES')}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                    {selectedOrder && new Date(selectedOrder.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                            </div>
-                        </div>
-                    </DialogHeader>
+            {/* Quick Access Cards */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Acceso Rápido</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                        {quickAccessCards.map((card, index) => (
+                            <button
+                                key={index}
+                                onClick={() => router.push(card.href)}
+                                className="p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow text-left"
+                            >
+                                <card.icon className="w-6 h-6 text-gray-600 mb-2" />
+                                <h3 className="font-semibold text-sm mb-1">{card.title}</h3>
+                                <p className="text-xs text-gray-500">{card.description}</p>
+                            </button>
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
 
-                    {selectedOrder && (
-                        <>
-                            <ScrollArea className="flex-1 p-6">
-                                <div className="space-y-6">
-                                    {/* Order Items */}
-                                    <div>
-                                        <h3 className="font-semibold mb-3 text-lg flex items-center gap-2">
-                                            <Package className="w-5 h-5 text-amber-600" />
-                                            Productos
-                                        </h3>
-                                        <div className="space-y-3">
-                                            {selectedOrder.order_items.map((item) => (
-                                                <div key={item.id} className="flex justify-between items-start p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
-                                                    <div className="flex-1">
-                                                        <p className="font-semibold text-lg">{item.product.name}</p>
-                                                        {item.variant && (
-                                                            <Badge variant="secondary" className="mt-1">
-                                                                {item.variant.name}
-                                                            </Badge>
-                                                        )}
-                                                        <div className="mt-2 text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                                                            <span className="bg-white dark:bg-gray-900 px-2 py-1 rounded border">x{item.quantity}</span>
-                                                            <span>a ${item.unit_price.toFixed(2)} c/u</span>
-                                                        </div>
-                                                    </div>
-                                                    <p className="font-bold text-lg text-amber-600">${item.subtotal.toFixed(2)}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    {/* Payment Info */}
-                                    <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-xl space-y-3 border border-blue-100 dark:border-blue-800">
-                                        <div className="flex justify-between items-center">
-                                            <span className="font-medium text-blue-900 dark:text-blue-100">Método de pago</span>
-                                            <Badge className="text-base px-3 py-1 bg-blue-100 text-blue-800 hover:bg-blue-200 border-0">
-                                                {selectedOrder.payment_method === 'cash' ? 'Efectivo 💵' : 'Tarjeta 💳'}
-                                            </Badge>
-                                        </div>
-                                        {selectedOrder.payment_method === 'cash' && selectedOrder.amount_paid && (
-                                            <>
-                                                <div className="flex justify-between text-base">
-                                                    <span className="text-blue-800/70 dark:text-blue-200/70">Monto recibido</span>
-                                                    <span className="font-mono font-medium">${selectedOrder.amount_paid.toFixed(2)}</span>
-                                                </div>
-                                                <div className="flex justify-between text-lg font-bold">
-                                                    <span className="text-blue-900 dark:text-blue-100">Cambio entregado</span>
-                                                    <span className="font-mono text-blue-600 dark:text-blue-400">${selectedOrder.change_amount.toFixed(2)}</span>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    {/* Totals */}
-                                    <div className="space-y-3 pt-2">
-                                        <div className="flex justify-between text-base text-gray-600 dark:text-gray-400">
-                                            <span>Subtotal</span>
-                                            <span>${selectedOrder.subtotal.toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between text-base text-gray-600 dark:text-gray-400">
-                                            <span>Impuesto (10%)</span>
-                                            <span>${selectedOrder.tax.toFixed(2)}</span>
-                                        </div>
-                                        <Separator />
-                                        <div className="flex justify-between text-2xl font-bold">
-                                            <span>Total</span>
-                                            <span className="text-green-600">${selectedOrder.total.toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </ScrollArea>
-
-                            <div className="p-6 border-t bg-gray-50 dark:bg-gray-900/50">
-                                <Button
-                                    className="w-full h-14 text-lg font-medium bg-gray-900 hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
-                                    onClick={() => setShowOrderDetail(false)}
-                                >
-                                    Cerrar Detalle
-                                </Button>
-                            </div>
-                        </>
-                    )}
-                </DialogContent>
-            </Dialog>
+            {/* Recent Orders */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between">
+                        <CardTitle>Órdenes Recientes</CardTitle>
+                        <Button variant="ghost" size="sm" onClick={() => { setSearchTerm(''); setPaymentFilter('all') }}>
+                            Limpiar Filtros
+                        </Button>
+                    </div>
+                    <div className="flex gap-4 mt-4">
+                        <Input
+                            placeholder="Buscar por ID o cajero..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="max-w-xs"
+                        />
+                        <select
+                            value={paymentFilter}
+                            onChange={(e) => setPaymentFilter(e.target.value)}
+                            className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+                        >
+                            <option value="all">Todos los métodos</option>
+                            <option value="cash">Efectivo</option>
+                            <option value="card">Tarjeta</option>
+                            <option value="qr">Yape</option>
+                        </select>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <div className="text-sm text-gray-500 mb-4">
+                        Mostrando {filteredOrders.length} de {recentOrders.length} órdenes
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-gray-50 border-b">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Orden</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cajero</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Método</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {filteredOrders.map((order) => (
+                                    <tr key={order.id} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 text-sm">{order.order_number}</td>
+                                        <td className="px-4 py-3 text-sm">
+                                            {new Date(order.created_at).toLocaleDateString('es-PE', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            })}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm">{order.cashier_email.split('@')[0]}</td>
+                                        <td className="px-4 py-3 text-sm capitalize">{
+                                            order.payment_method === 'cash' ? 'Efectivo' :
+                                                order.payment_method === 'card' ? 'Tarjeta' : 'Yape'
+                                        }</td>
+                                        <td className="px-4 py-3 text-sm font-semibold">S/ {order.total.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-sm">
+                                            <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
+                                                completado
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     )
 }
