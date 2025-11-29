@@ -290,6 +290,12 @@ export default function AdminDashboard() {
 
     return (
         <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
+            {/* Header */}
+            <div className="mb-6">
+                <h1 className="text-3xl font-bold text-gray-900">Panel de Administración</h1>
+                <p className="text-gray-500 mt-1">Resumen general de tu negocio</p>
+            </div>
+
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
